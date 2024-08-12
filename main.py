@@ -1,9 +1,9 @@
 import sys
-import cv2
 import os
+import cv2
 from PyQt5.QtCore import Qt, QTimer, QPointF, QRectF, QSize
-from PyQt5.QtGui import QImage, QPixmap, QColor, QPainter, QPen, QBrush, QFontMetrics
-from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QDialog, QListWidget, QSpinBox, QAbstractSpinBox, QHBoxLayout, QLineEdit, QDialogButtonBox, QSplitter, QFrame
+from PyQt5.QtGui import QImage, QPixmap, QColor, QPainter, QPen, QFontMetrics
+from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QDialog, QListWidget, QSpinBox, QAbstractSpinBox, QHBoxLayout, QLineEdit, QSplitter, QFrame
 
 class ZoomWidget(QSpinBox):
     def __init__(self, value=100):
@@ -263,7 +263,7 @@ class Canvas(QFrame):
                 self.selected_shape = None
                 self.update()
             elif event.key() == Qt.Key_Return and self.pixmap:
-                self.parent().parent().capture_still()
+                self.parent().parent().save_and_switch_mode()  # 저장 및 모드 전환 기능 호출
         except Exception as e:
             print(f"Error in keyPressEvent: {e}")
 
@@ -293,7 +293,9 @@ class CameraApp(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)
         self.current_frame = None
-        self.save_folder = None  # 저장할 폴더 경로를 저장하는 변수
+        self.is_capturing = False
+        self.save_folder = None
+        self.save_counter = 1
 
     def load_labels(self, filename):
         with open(filename, "r") as f:
@@ -316,13 +318,9 @@ class CameraApp(QWidget):
         self.start_button.clicked.connect(self.start_camera)
         sidebar_layout.addWidget(self.start_button)
 
-        self.save_folder_button = QPushButton("Select Save Folder", self)
-        self.save_folder_button.clicked.connect(self.select_save_folder)
-        sidebar_layout.addWidget(self.save_folder_button)
-
-        self.save_button = QPushButton("Save Label", self)
-        self.save_button.clicked.connect(self.save_yolo_format)
-        sidebar_layout.addWidget(self.save_button)
+        self.file_name_edit = QLineEdit(self)
+        self.file_name_edit.setPlaceholderText("Enter base file name")
+        sidebar_layout.addWidget(self.file_name_edit)
 
         self.zoom_widget = ZoomWidget(value=100)
         self.zoom_widget.valueChanged.connect(self.zoom_changed)
@@ -348,14 +346,6 @@ class CameraApp(QWidget):
         splitter.setStretchFactor(1, 2)
 
         main_layout.addWidget(splitter)
-
-    def select_save_folder(self):
-        self.save_folder = QFileDialog.getExistingDirectory(self, "Select Folder")
-        if self.save_folder:
-            images_folder = os.path.join(self.save_folder, "images")
-            labels_folder = os.path.join(self.save_folder, "labels")
-            os.makedirs(images_folder, exist_ok=True)
-            os.makedirs(labels_folder, exist_ok=True)
 
     def zoom_changed(self, value):
         self.canvas.scale_factor = value / 100.0
@@ -383,12 +373,13 @@ class CameraApp(QWidget):
         self.selected_camera = cv2.VideoCapture(index, cv2.CAP_DSHOW)
         if self.selected_camera.isOpened():
             self.timer.start(30)
+            self.is_capturing = True
         else:
             print("Failed to open the selected camera.")
 
     def update_frame(self):
         try:
-            if self.selected_camera is not None and self.selected_camera.isOpened():
+            if self.selected_camera is not None and self.selected_camera.isOpened() and self.is_capturing:
                 ret, frame = self.selected_camera.read()
                 if ret:
                     self.current_frame = frame
@@ -398,6 +389,12 @@ class CameraApp(QWidget):
                     self.canvas.load_pixmap(pixmap)
         except Exception as e:
             print(f"Error in update_frame: {e}")
+
+    def save_and_switch_mode(self):
+        if self.is_capturing:
+            self.capture_still()
+        else:
+            self.save_yolo_format()
 
     def capture_still(self):
         try:
@@ -412,27 +409,31 @@ class CameraApp(QWidget):
                 pixmap = QPixmap.fromImage(image)
 
                 self.canvas.load_pixmap(pixmap)
-                self.selected_camera = None
-
+                self.is_capturing = False  # 모드 전환
         except Exception as e:
             print(f"Error in capture_still: {e}")
 
     def save_yolo_format(self):
         try:
-            if not hasattr(self, 'canvas') or not self.canvas.get_shapes() or not self.save_folder:
+            if not hasattr(self, 'canvas') or not self.canvas.get_shapes():
                 return
 
-            images_folder = os.path.join(self.save_folder, "images")
-            labels_folder = os.path.join(self.save_folder, "labels")
+            if not self.save_folder:
+                self.save_folder = QFileDialog.getExistingDirectory(self, "Select Save Folder")
+                if not self.save_folder:
+                    return
 
-            # 이미지 저장
-            image_name = f"{len(os.listdir(images_folder)) + 1}.jpg"
-            image_path = os.path.join(images_folder, image_name)
-            self.canvas.pixmap.save(image_path)
+            images_folder = os.path.join(self.save_folder, 'images')
+            labels_folder = os.path.join(self.save_folder, 'labels')
 
-            # 라벨 데이터 저장
-            label_name = f"{len(os.listdir(labels_folder)) + 1}.txt"
-            label_path = os.path.join(labels_folder, label_name)
+            os.makedirs(images_folder, exist_ok=True)
+            os.makedirs(labels_folder, exist_ok=True)
+
+            base_filename = self.file_name_edit.text()
+            if not base_filename:
+                base_filename = "image"
+
+            image_filename, label_filename = self.generate_unique_filenames(base_filename, images_folder, labels_folder)
 
             img_size = (self.canvas.pixmap.height(), self.canvas.pixmap.width())
             yolo_data = []
@@ -450,16 +451,36 @@ class CameraApp(QWidget):
                 label_index = self.labels.index(label)
                 yolo_data.append(f"{label_index} {x_center} {y_center} {width} {height}")
 
+            image_path = os.path.join(images_folder, image_filename)
+            label_path = os.path.join(labels_folder, label_filename)
+
+            self.canvas.pixmap.save(image_path, "JPG")
             with open(label_path, 'w') as f:
                 f.write("\n".join(yolo_data))
+
+            self.is_capturing = True  # 웹캠 모드로 전환
+            self.save_counter += 1  # 파일명 카운터 증가
+            self.start_camera()  # 웹캠 다시 시작
 
         except Exception as e:
             print(f"Error in save_yolo_format: {e}")
 
+    def generate_unique_filenames(self, base_filename, images_folder, labels_folder):
+        image_filename = f"{base_filename}.jpg"
+        label_filename = f"{base_filename}.txt"
+        counter = 1
+
+        while os.path.exists(os.path.join(images_folder, image_filename)) or os.path.exists(os.path.join(labels_folder, label_filename)):
+            image_filename = f"{base_filename}_{counter}.jpg"
+            label_filename = f"{base_filename}_{counter}.txt"
+            counter += 1
+
+        return image_filename, label_filename
+
     def keyPressEvent(self, event):
         try:
             if event.key() == Qt.Key_Return:
-                self.capture_still()
+                self.save_and_switch_mode()
         except Exception as e:
             print(f"Error in keyPressEvent: {e}")
 
