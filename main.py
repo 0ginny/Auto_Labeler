@@ -1,8 +1,9 @@
 import sys
 import cv2
-from PyQt5.QtCore import Qt, QTimer, QPointF, QRectF, QSize, QStringListModel
-from PyQt5.QtGui import QImage, QPixmap, QColor, QPainter, QPen, QBrush, QFontMetrics, QPalette
-from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QDialog, QListWidget, QSpinBox, QAbstractSpinBox, QHBoxLayout, QLineEdit, QDialogButtonBox, QCompleter, QSplitter, QFrame, QDockWidget
+import os
+from PyQt5.QtCore import Qt, QTimer, QPointF, QRectF, QSize
+from PyQt5.QtGui import QImage, QPixmap, QColor, QPainter, QPen, QBrush, QFontMetrics
+from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QDialog, QListWidget, QSpinBox, QAbstractSpinBox, QHBoxLayout, QLineEdit, QDialogButtonBox, QSplitter, QFrame
 
 class ZoomWidget(QSpinBox):
     def __init__(self, value=100):
@@ -41,7 +42,7 @@ class LabelDialog(QDialog):
     def get_label(self):
         return self.selected_label
 
-class Canvas(QFrame):  # QFrame으로 변경
+class Canvas(QFrame):
     def __init__(self, labels, parent=None):
         super(Canvas, self).__init__(parent)
         self.labels = labels
@@ -60,7 +61,7 @@ class Canvas(QFrame):  # QFrame으로 변경
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
         self.hovered_vertex = None
-        self.vertex_radius = 5  # 추가된 꼭짓점 크기
+        self.vertex_radius = 5
 
     def load_pixmap(self, pixmap):
         self.pixmap = pixmap
@@ -261,8 +262,8 @@ class Canvas(QFrame):  # QFrame으로 변경
                 self.shapes = [s for s in self.shapes if s[0] != self.selected_shape]
                 self.selected_shape = None
                 self.update()
-            elif event.key() == Qt.Key_Return and self.pixmap:  # Enter 키로 캡처 기능 대체
-                self.parent().parent().capture_still()  # 캡처 기능 호출
+            elif event.key() == Qt.Key_Return and self.pixmap:
+                self.parent().parent().capture_still()
         except Exception as e:
             print(f"Error in keyPressEvent: {e}")
 
@@ -292,6 +293,7 @@ class CameraApp(QWidget):
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.update_frame)
         self.current_frame = None
+        self.save_folder = None  # 저장할 폴더 경로를 저장하는 변수
 
     def load_labels(self, filename):
         with open(filename, "r") as f:
@@ -314,6 +316,10 @@ class CameraApp(QWidget):
         self.start_button.clicked.connect(self.start_camera)
         sidebar_layout.addWidget(self.start_button)
 
+        self.save_folder_button = QPushButton("Select Save Folder", self)
+        self.save_folder_button.clicked.connect(self.select_save_folder)
+        sidebar_layout.addWidget(self.save_folder_button)
+
         self.save_button = QPushButton("Save Label", self)
         self.save_button.clicked.connect(self.save_yolo_format)
         sidebar_layout.addWidget(self.save_button)
@@ -325,9 +331,9 @@ class CameraApp(QWidget):
         zoom_layout.addWidget(self.zoom_widget)
         sidebar_layout.addLayout(zoom_layout)
 
-        sidebar_layout.addStretch()  # 사이드바 아래 부분에 공간 추가
+        sidebar_layout.addStretch()
 
-        sidebar_widget = QFrame()  # QFrame으로 변경
+        sidebar_widget = QFrame()
         sidebar_widget.setLayout(sidebar_layout)
         sidebar_widget.setFrameStyle(QFrame.Box | QFrame.Raised)
         sidebar_widget.setLineWidth(2)
@@ -339,9 +345,17 @@ class CameraApp(QWidget):
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(sidebar_widget)
         splitter.addWidget(self.canvas)
-        splitter.setStretchFactor(1, 2)  # 캔버스가 더 많은 공간을 차지하도록 설정
+        splitter.setStretchFactor(1, 2)
 
         main_layout.addWidget(splitter)
+
+    def select_save_folder(self):
+        self.save_folder = QFileDialog.getExistingDirectory(self, "Select Folder")
+        if self.save_folder:
+            images_folder = os.path.join(self.save_folder, "images")
+            labels_folder = os.path.join(self.save_folder, "labels")
+            os.makedirs(images_folder, exist_ok=True)
+            os.makedirs(labels_folder, exist_ok=True)
 
     def zoom_changed(self, value):
         self.canvas.scale_factor = value / 100.0
@@ -388,30 +402,37 @@ class CameraApp(QWidget):
     def capture_still(self):
         try:
             if self.current_frame is not None:
-                self.timer.stop()  # 타이머를 멈춰 비디오 입력을 중지
+                self.timer.stop()
                 if self.selected_camera.isOpened():
-                    self.selected_camera.release()  # 비디오 스트리밍을 중지
+                    self.selected_camera.release()
 
-                captured_frame = self.current_frame.copy()  # current_frame을 복사하여 사용
-
+                captured_frame = self.current_frame.copy()
                 captured_frame = cv2.cvtColor(captured_frame, cv2.COLOR_BGR2RGB)
                 image = QImage(captured_frame, captured_frame.shape[1], captured_frame.shape[0], QImage.Format_RGB888)
                 pixmap = QPixmap.fromImage(image)
 
                 self.canvas.load_pixmap(pixmap)
-                self.selected_camera = None  # 선택된 카메라를 해제
+                self.selected_camera = None
 
         except Exception as e:
             print(f"Error in capture_still: {e}")
 
     def save_yolo_format(self):
         try:
-            if not hasattr(self, 'canvas') or not self.canvas.get_shapes():
+            if not hasattr(self, 'canvas') or not self.canvas.get_shapes() or not self.save_folder:
                 return
 
-            file_path, _ = QFileDialog.getSaveFileName(self, "Save Label", "", "Text Files (*.txt)")
-            if not file_path:
-                return
+            images_folder = os.path.join(self.save_folder, "images")
+            labels_folder = os.path.join(self.save_folder, "labels")
+
+            # 이미지 저장
+            image_name = f"{len(os.listdir(images_folder)) + 1}.jpg"
+            image_path = os.path.join(images_folder, image_name)
+            self.canvas.pixmap.save(image_path)
+
+            # 라벨 데이터 저장
+            label_name = f"{len(os.listdir(labels_folder)) + 1}.txt"
+            label_path = os.path.join(labels_folder, label_name)
 
             img_size = (self.canvas.pixmap.height(), self.canvas.pixmap.width())
             yolo_data = []
@@ -429,15 +450,16 @@ class CameraApp(QWidget):
                 label_index = self.labels.index(label)
                 yolo_data.append(f"{label_index} {x_center} {y_center} {width} {height}")
 
-            with open(file_path, 'w') as f:
+            with open(label_path, 'w') as f:
                 f.write("\n".join(yolo_data))
+
         except Exception as e:
             print(f"Error in save_yolo_format: {e}")
 
     def keyPressEvent(self, event):
         try:
             if event.key() == Qt.Key_Return:
-                self.capture_still()  # Enter 키로 캡처 기능 호출
+                self.capture_still()
         except Exception as e:
             print(f"Error in keyPressEvent: {e}")
 
