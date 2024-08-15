@@ -64,6 +64,7 @@ class Canvas(QFrame):
         self.setFocusPolicy(Qt.StrongFocus)
         self.hovered_vertex = None
         self.vertex_radius = 5
+        self.labeling_done = False  # 라벨링 완료 여부 변수 추가
 
     def load_pixmap(self, pixmap):
         self.pixmap = pixmap
@@ -232,9 +233,15 @@ class Canvas(QFrame):
                     dialog = LabelDialog(self.labels, self)
                     if dialog.exec_():
                         label_name = dialog.get_label()
-                        self.shapes.append((self.current_shape, label_name))
+                        if label_name:  # 라벨이 선택된 경우에만 저장
+                            self.shapes.append((self.current_shape, label_name))
+                            self.labeling_done = True  # 라벨링 완료로 설정
+                        else:
+                            self.labeling_done = False  # 라벨이 없으면 False로 설정
                     self.current_shape = None
                     self.drawing = False
+                    if not self.labeling_done:  # 라벨이 선택되지 않으면 비디오 피드로 복귀
+                        self.parent().parent().reset_to_video_feed()
                 elif self.selected_vertex is not None:
                     self.selected_vertex = None
                 elif self.dragging_shape:
@@ -291,6 +298,7 @@ class CameraApp(QWidget):
         super().__init__()
         self.labels = self.load_labels("classes.txt")
         self.yolo_model = None
+        self.selected_preprocessing = "Normal"  # 초기 전처리 상태 추가
         self.initUI()
         self.selected_camera = None
         self.timer = QTimer(self)
@@ -332,8 +340,8 @@ class CameraApp(QWidget):
         self.model_label.setFixedHeight(30)  # 크기 고정
         sidebar_layout.addWidget(self.model_label)
 
-        self.save_button = QPushButton("Save Dataset", self)  # 버튼 이름 변경
-        self.save_button.clicked.connect(self.save_yolo_format)
+        self.save_button = QPushButton("Save Dataset", self)
+        self.save_button.clicked.connect(self.save_yolo_format)  # 버튼 클릭 이벤트 연결
         sidebar_layout.addWidget(self.save_button)
 
         self.zoom_widget = ZoomWidget(value=100)
@@ -346,6 +354,13 @@ class CameraApp(QWidget):
         self.save_name_input = QLineEdit(self)
         self.save_name_input.setPlaceholderText("Enter base save name")
         sidebar_layout.addWidget(self.save_name_input)
+
+        self.preprocessing_combo = QComboBox(self)
+        self.preprocessing_combo.addItems(["Normal", "Increase Brightness", "Image Pyramids", "Color Space Conversion"])
+        self.preprocessing_combo.currentTextChanged.connect(self.change_preprocessing)
+        sidebar_layout.addWidget(QLabel("Select Preprocessing:"))
+        sidebar_layout.addWidget(self.preprocessing_combo)
+
 
         sidebar_layout.addStretch()  # 사이드바 아래 부분에 공간 추가
 
@@ -364,6 +379,36 @@ class CameraApp(QWidget):
         splitter.setStretchFactor(1, 2)  # 캔버스가 더 많은 공간을 차지하도록 설정
 
         main_layout.addWidget(splitter)
+
+    def change_preprocessing(self, text):
+        self.selected_preprocessing = text
+
+    def apply_preprocessing(self, frame):
+        """전처리 적용"""
+        if self.selected_preprocessing == "Increase Brightness":
+            return self.increase_brightness(frame, beta=50)
+        elif self.selected_preprocessing == "Image Pyramids":
+            higher_reso = self.image_pyramids(frame)
+            return higher_reso  # 고해상도 이미지를 반환
+        elif self.selected_preprocessing == "Color Space Conversion":
+            return self.color_space_converted(frame)
+        else:
+            return frame
+
+    def increase_brightness(self, image, beta):
+        """이미지의 밝기를 증가시키는 함수"""
+        bright_image = cv2.convertScaleAbs(image, alpha=1, beta=beta)
+        return bright_image
+
+    def image_pyramids(self, image):
+        """이미지의 해상도를 높이는 함수 (피라미드 업샘플링)"""
+        higher_reso = cv2.pyrUp(image)
+        return higher_reso
+
+    def color_space_converted(self, image):
+        """이미지를 BGR에서 HSV 색 공간으로 변환하는 함수"""
+        hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
+        return hsv_image
 
     def zoom_changed(self, value):
         self.canvas.scale_factor = value / 100.0
@@ -400,9 +445,11 @@ class CameraApp(QWidget):
             if self.selected_camera is not None and self.selected_camera.isOpened():
                 ret, frame = self.selected_camera.read()
                 if ret:
+                    # 선택된 전처리 적용
+                    frame = self.apply_preprocessing(frame)
                     self.current_frame = frame
-                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                    image = QImage(frame, frame.shape[1], frame.shape[0], QImage.Format_RGB888)
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # OpenCV 이미지를 RGB로 변환
+                    image = QImage(frame_rgb, frame_rgb.shape[1], frame_rgb.shape[0], QImage.Format_RGB888)
                     pixmap = QPixmap.fromImage(image)
                     self.canvas.load_pixmap(pixmap)
         except Exception as e:
@@ -431,6 +478,7 @@ class CameraApp(QWidget):
                             label_name = self.labels[class_id]
                             shape = [QPointF(x_min, y_min), QPointF(x_max, y_max)]
                             self.canvas.shapes.append((shape, label_name))
+                            self.canvas.labeling_done = True  # AI에 의한 라벨링도 완료로 설정
                             self.canvas.update()
 
                 self.captured = True  # 캡처 완료 상태
@@ -468,8 +516,7 @@ class CameraApp(QWidget):
                 self.save_count += 1
 
             # 이미지 저장
-            captured_frame_rgb = cv2.cvtColor(self.current_frame, cv2.COLOR_BGR2RGB)
-            cv2.imwrite(img_save_path, captured_frame_rgb)
+            cv2.imwrite(img_save_path, self.current_frame)
 
             # 라벨 저장
             img_size = (self.canvas.pixmap.height(), self.canvas.pixmap.width())
@@ -511,6 +558,7 @@ names: {self.labels}
     def reset_to_video_feed(self):
         self.current_frame = None
         self.canvas.shapes = []
+        self.canvas.labeling_done = False  # 라벨링 상태 초기화
         self.start_camera()
         self.captured = False  # 캡처 상태 초기화
 
@@ -529,7 +577,10 @@ names: {self.labels}
                 if not self.captured:
                     self.capture_still()
                 else:
-                    self.save_yolo_format()
+                    if not self.canvas.labeling_done:  # 라벨링이 완료되지 않았으면 저장 없이 복귀
+                        self.reset_to_video_feed()
+                    else:
+                        self.save_yolo_format()
                 return True
         return super().eventFilter(source, event)
 
@@ -539,6 +590,7 @@ names: {self.labels}
                 self.selected_camera.release()
         except Exception as e:
             print(f"Error in closeEvent: {e}")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
