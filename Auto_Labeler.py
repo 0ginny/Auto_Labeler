@@ -3,7 +3,7 @@ import os
 import cv2
 from PyQt5.QtCore import Qt, QTimer, QPointF, QRectF, QSize, QEvent
 from PyQt5.QtGui import QImage, QPixmap, QColor, QPainter, QPen, QBrush, QFontMetrics
-from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QDialog, QListWidget, QSpinBox, QAbstractSpinBox, QHBoxLayout, QLineEdit, QSplitter, QFrame
+from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QDialog, QListWidget, QSpinBox, QAbstractSpinBox, QHBoxLayout, QLineEdit, QSplitter, QFrame, QSizePolicy
 
 from ultralytics import YOLO  # YOLO 모델 로드용
 
@@ -330,9 +330,11 @@ class CameraApp(QWidget):
     def initUI(self):
         self.setWindowTitle("Camera Selector")
 
+        # 메인 레이아웃 설정
         main_layout = QHBoxLayout(self)
         self.setLayout(main_layout)
 
+        # 사이드바 레이아웃 설정
         sidebar_layout = QVBoxLayout()
 
         self.comboBox = QComboBox(self)
@@ -349,11 +351,11 @@ class CameraApp(QWidget):
         sidebar_layout.addWidget(self.yolo_load_button)
 
         self.model_label = QLabel("AI Labeling OFF")
-        self.model_label.setFixedHeight(30)  # 크기 고정
+        self.model_label.setFixedHeight(30)
         sidebar_layout.addWidget(self.model_label)
 
         self.save_button = QPushButton("Save Dataset", self)
-        self.save_button.clicked.connect(self.save_yolo_format)  # 버튼 클릭 이벤트 연결
+        self.save_button.clicked.connect(self.save_yolo_format)
         sidebar_layout.addWidget(self.save_button)
 
         self.zoom_widget = ZoomWidget(value=100)
@@ -373,24 +375,34 @@ class CameraApp(QWidget):
         sidebar_layout.addWidget(QLabel("Select Preprocessing:"))
         sidebar_layout.addWidget(self.preprocessing_combo)
 
+        sidebar_layout.addStretch()
 
-        sidebar_layout.addStretch()  # 사이드바 아래 부분에 공간 추가
-
-        sidebar_widget = QFrame()  # QFrame으로 변경
+        sidebar_widget = QFrame()
         sidebar_widget.setLayout(sidebar_layout)
         sidebar_widget.setFrameStyle(QFrame.Box | QFrame.Raised)
         sidebar_widget.setLineWidth(2)
+        sidebar_widget.setFixedWidth(200)  # 사이드바의 너비를 고정
 
+        # 캔버스(웹캠 화면) 설정
         self.canvas = Canvas(self.labels, self)
         self.canvas.setFrameStyle(QFrame.Box | QFrame.Raised)
         self.canvas.setLineWidth(2)
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)  # 캔버스가 창 크기에 맞게 확장되도록 설정
 
+        # QSplitter 설정
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(sidebar_widget)
         splitter.addWidget(self.canvas)
-        splitter.setStretchFactor(1, 2)  # 캔버스가 더 많은 공간을 차지하도록 설정
+
+        # 사이드바는 고정된 너비, 웹캠 화면은 확장되도록 설정
+        splitter.setStretchFactor(0, 0)  # 사이드바는 고정 크기
+        splitter.setStretchFactor(1, 1)  # 웹캠 화면은 확장
 
         main_layout.addWidget(splitter)
+
+        # 메인 창 크기 조정 정책 설정
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setMinimumSize(800, 600)  # 최소 창 크기 설정 (필요에 따라 조정 가능)
 
     def change_preprocessing(self, text):
         self.selected_preprocessing = text
