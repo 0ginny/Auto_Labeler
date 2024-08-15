@@ -279,10 +279,22 @@ class Canvas(QFrame):
     def wheelEvent(self, event):
         try:
             if event.modifiers() == Qt.ControlModifier:
+                old_scale_factor = self.scale_factor
                 delta = event.angleDelta().y() / 120
                 self.scale_factor += delta * 0.1
                 self.scale_factor = max(0.1, min(self.scale_factor, 5.0))
+
+                # 마우스 위치를 캔버스 내의 이미지 좌표로 변환
+                mouse_pos = event.pos()
+                old_image_pos = (mouse_pos - self.image_offset) / old_scale_factor
+
+                # 새로운 스케일에 맞게 이미지 오프셋 재계산
                 self.update_image_offset()
+
+                # 마우스를 기준으로 이미지의 새로운 오프셋 설정
+                new_image_pos = old_image_pos * self.scale_factor
+                self.image_offset = mouse_pos - new_image_pos
+
                 self.update()
         except Exception as e:
             print(f"Error in wheelEvent: {e}")
@@ -451,6 +463,9 @@ class CameraApp(QWidget):
                     frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # OpenCV 이미지를 RGB로 변환
                     image = QImage(frame_rgb, frame_rgb.shape[1], frame_rgb.shape[0], QImage.Format_RGB888)
                     pixmap = QPixmap.fromImage(image)
+
+                    # 비디오 프레임은 항상 100% 크기로 표시
+                    self.canvas.scale_factor = 1.0
                     self.canvas.load_pixmap(pixmap)
         except Exception as e:
             print(f"Error in update_frame: {e}")
@@ -464,9 +479,13 @@ class CameraApp(QWidget):
 
                 captured_frame = self.current_frame.copy()  # current_frame을 복사하여 사용
                 captured_frame_rgb = cv2.cvtColor(captured_frame, cv2.COLOR_BGR2RGB)
-                image = QImage(captured_frame_rgb, captured_frame_rgb.shape[1], captured_frame_rgb.shape[0], QImage.Format_RGB888)
+                image = QImage(captured_frame_rgb, captured_frame_rgb.shape[1], captured_frame_rgb.shape[0],
+                               QImage.Format_RGB888)
                 pixmap = QPixmap.fromImage(image)
+
+                # 캡처된 이미지는 사용자가 줌할 수 있도록 함
                 self.canvas.load_pixmap(pixmap)
+                self.canvas.scale_factor = 1.0  # 캡처 후 기본 줌 레벨을 100%로 설정
 
                 # 객체 탐지 및 라벨링
                 if self.yolo_model:
