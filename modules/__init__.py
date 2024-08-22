@@ -8,7 +8,6 @@ from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidge
 from ultralytics import YOLO
 
 from canvas import Canvas
-from zoom import ZoomWidget
 
 class AutoLabeler(QMainWindow):
     def __init__(self):
@@ -71,15 +70,13 @@ class AutoLabeler(QMainWindow):
         self.model_label = QLabel("AI Labeling OFF")
         sidebar_layout.addWidget(self.model_label)
 
-        self.save_button = QPushButton("Save Dataset", self)
-        self.save_button.clicked.connect(self.save_yolo_format)
-        sidebar_layout.addWidget(self.save_button)
 
-        self.zoom_widget = ZoomWidget(value=100)
-        self.zoom_widget.valueChanged.connect(self.zoom_changed)
+        # Zoom Reset Button
+        self.reset_button = QPushButton("Reset Zoom", self)
+        self.reset_button.clicked.connect(self.reset_zoom)
         zoom_layout = QHBoxLayout()
         zoom_layout.addWidget(QLabel("Zoom:"))
-        zoom_layout.addWidget(self.zoom_widget)
+        zoom_layout.addWidget(self.reset_button)
         sidebar_layout.addLayout(zoom_layout)
 
         self.save_name_input = QLineEdit(self)
@@ -123,10 +120,15 @@ class AutoLabeler(QMainWindow):
     def color_space_converted(self, image):
         return cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    def zoom_changed(self, value):
-        self.canvas.scale_factor = value / 100.0
-        self.canvas.update_image_offset()
-        self.canvas.update()
+    def reset_zoom(self):
+        # 화면 크기에 맞게 이미지를 다시 스케일링
+        if self.canvas.pixmap:
+            scroll_area_size = self.centralWidget().size()
+            scaled_pixmap = self.canvas.pixmap.scaled(scroll_area_size, Qt.KeepAspectRatio)
+            self.canvas.load_pixmap(scaled_pixmap)
+            self.canvas.scale_factor = 1.0
+            self.canvas.update_image_offset()
+            self.canvas.update()
 
     def find_cameras(self):
         index = 0
