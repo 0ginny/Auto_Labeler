@@ -183,18 +183,27 @@ class CameraApp(QMainWindow):
     def capture_still(self):
         try:
             if self.current_frame is not None:
-                self.timer.stop()
+                self.timer.stop()  # 타이머를 멈춰 비디오 입력을 중지
                 if self.selected_camera.isOpened():
-                    self.selected_camera.release()
+                    self.selected_camera.release()  # 비디오 스트리밍을 중지
 
-                captured_frame = self.current_frame.copy()
+                captured_frame = self.current_frame.copy()  # current_frame을 복사하여 사용
                 captured_frame_rgb = cv2.cvtColor(captured_frame, cv2.COLOR_BGR2RGB)
-                image = QImage(captured_frame_rgb, captured_frame_rgb.shape[1], captured_frame_rgb.shape[0], QImage.Format_RGB888)
+                image = QImage(captured_frame_rgb, captured_frame_rgb.shape[1], captured_frame_rgb.shape[0],
+                               QImage.Format_RGB888)
                 pixmap = QPixmap.fromImage(image)
 
-                self.canvas.load_pixmap(pixmap)
-                self.canvas.scale_factor = 1.0
+                # 중앙 위젯(QScrollArea)의 크기에 맞게 이미지 스케일링
+                scroll_area_size = self.centralWidget().size()
+                scaled_pixmap = pixmap.scaled(scroll_area_size, Qt.KeepAspectRatio)
 
+                # 캔버스에 스케일링된 이미지 로드
+                self.canvas.load_pixmap(scaled_pixmap)
+
+                # 캔버스 크기를 스케일링된 이미지 크기에 맞춤
+                self.canvas.resize(scaled_pixmap.size())
+
+                # 객체 탐지 및 라벨링
                 if self.yolo_model:
                     results = self.yolo_model(captured_frame)
                     for result in results:
@@ -204,11 +213,11 @@ class CameraApp(QMainWindow):
                             label_name = self.labels[class_id]
                             shape = [QPointF(x_min, y_min), QPointF(x_max, y_max)]
                             self.canvas.shapes.append((shape, label_name))
-                            self.canvas.labeling_done = True
+                            self.canvas.labeling_done = True  # AI에 의한 라벨링도 완료로 설정
                             self.canvas.update()
 
-                self.captured = True
-                self.selected_camera = None
+                self.captured = True  # 캡처 완료 상태
+                self.selected_camera = None  # 선택된 카메라를 해제
 
         except Exception as e:
             print(f"Error in capture_still: {e}")

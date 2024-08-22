@@ -1,9 +1,7 @@
-
 from PyQt5.QtCore import Qt, QPointF, QRectF
 from PyQt5.QtGui import QColor, QPainter, QPen
 from PyQt5.QtWidgets import QFrame
 from labelbox import LabelDialog
-
 
 
 class Canvas(QFrame):
@@ -33,6 +31,7 @@ class Canvas(QFrame):
         self.update()
 
     def update_image_offset(self):
+        """이미지의 오프셋을 계산하여 중앙에 맞게 설정"""
         if self.pixmap:
             scaled_pixmap_size = self.pixmap.size() * self.scale_factor
             self.image_offset = QPointF(
@@ -46,6 +45,7 @@ class Canvas(QFrame):
         painter.setRenderHint(QPainter.SmoothPixmapTransform)
 
         if self.pixmap:
+            # 스케일링된 픽스맵을 화면에 그리기
             scaled_pixmap = self.pixmap.scaled(
                 self.pixmap.size() * self.scale_factor, Qt.KeepAspectRatio, Qt.SmoothTransformation)
             painter.drawPixmap(self.image_offset, scaled_pixmap)
@@ -54,6 +54,7 @@ class Canvas(QFrame):
             painter.setPen(pen)
             painter.setBrush(Qt.NoBrush)
 
+            # 기존의 라벨링된 사각형을 그리기
             for shape, label in self.shapes:
                 scaled_shape = [point * self.scale_factor + self.image_offset for point in shape]
                 if shape == self.hovered_shape:
@@ -68,6 +69,7 @@ class Canvas(QFrame):
                 painter.setPen(QPen(QColor(255, 255, 255)))
                 painter.drawText(QRectF(scaled_shape[0], scaled_shape[1]), Qt.AlignCenter, label)
 
+            # 현재 그리는 중인 사각형을 그리기
             if self.current_shape:
                 scaled_shape = [point * self.scale_factor + self.image_offset for point in self.current_shape]
                 pen.setColor(QColor(255, 0, 0))
@@ -76,18 +78,17 @@ class Canvas(QFrame):
                 painter.drawRect(QRectF(scaled_shape[0], scaled_shape[1]))
                 self._draw_vertices(painter, scaled_shape)
 
-        def _draw_vertices(self, painter, shape):
-            vertices = [
-                shape[0],
-                QPointF(shape[1].x(), shape[0].y()),
-                shape[1],
-                QPointF(shape[0].x(), shape[1].y())
-            ]
-            for i, vertex in enumerate(vertices):
-                radius = self.vertex_radius * 2 if (
-                            self.hovered_shape and self.hovered_vertex == i) else self.vertex_radius
-                painter.setBrush(QColor(255, 255, 255))
-                painter.drawEllipse(vertex, radius, radius)
+    def _draw_vertices(self, painter, shape):
+        vertices = [
+            shape[0],
+            QPointF(shape[1].x(), shape[0].y()),
+            shape[1],
+            QPointF(shape[0].x(), shape[1].y())
+        ]
+        for i, vertex in enumerate(vertices):
+            radius = self.vertex_radius * 2 if (self.hovered_shape and self.hovered_vertex == i) else self.vertex_radius
+            painter.setBrush(QColor(255, 255, 255))
+            painter.drawEllipse(vertex, radius, radius)
 
     def mousePressEvent(self, event):
         try:
@@ -99,6 +100,7 @@ class Canvas(QFrame):
 
                 click_pos = (event.pos() - self.image_offset) / self.scale_factor
 
+                # 기존 사각형의 꼭지점 또는 내부를 클릭했는지 확인
                 for shape, _ in self.shapes:
                     vertices = [
                         shape[0],
@@ -122,6 +124,7 @@ class Canvas(QFrame):
                             self.dragging_shape = shape
                             break
 
+                # 새로운 사각형 그리기 시작
                 if self.selected_shape is None:
                     if QRectF(QPointF(0, 0), QPointF(self.pixmap.size().width(), self.pixmap.size().height())).contains(click_pos):
                         self.current_shape = [click_pos, click_pos]
