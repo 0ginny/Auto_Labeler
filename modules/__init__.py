@@ -1,22 +1,21 @@
 import sys
 import os
 import cv2
-from PyQt5.QtCore import Qt, QTimer, QPointF,QEvent
+from PyQt5.QtCore import Qt, QTimer, QPointF, QEvent
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QDialog, QListWidget, QSpinBox, QAbstractSpinBox, QHBoxLayout, QLineEdit, QSplitter, QFrame, QSizePolicy, QScrollArea
+from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QListWidget, QLineEdit, QSplitter, QFrame, QSizePolicy, QScrollArea, QDockWidget, QMainWindow, QHBoxLayout, QMessageBox
 
 from canvas import Canvas
 from zoom import ZoomWidget
 
-
 from ultralytics import YOLO
 
-class CameraApp(QWidget):
+class CameraApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.labels = self.load_labels("classes.txt")
         self.yolo_model = None
-        self.selected_preprocessing = "Normal"  # 초기 전처리 상태 추가
+        self.selected_preprocessing = "Normal"
         self.initUI()
         self.selected_camera = None
         self.timer = QTimer(self)
@@ -24,9 +23,8 @@ class CameraApp(QWidget):
         self.current_frame = None
         self.output_folder = None
         self.save_count = 0
-        self.captured = False  # 캡처 상태 플래그
+        self.captured = False
 
-        # 전역 이벤트 필터 설치
         QApplication.instance().installEventFilter(self)
 
     def load_labels(self, filename):
@@ -36,11 +34,25 @@ class CameraApp(QWidget):
     def initUI(self):
         self.setWindowTitle("Camera Selector")
 
-        # 메인 레이아웃 설정
-        main_layout = QHBoxLayout(self)
-        self.setLayout(main_layout)
+        # 중앙 위젯 설정 (캔버스)
+        self.canvas = Canvas(self.labels, self)
+        self.canvas.setFrameStyle(QFrame.Box | QFrame.Raised)
+        self.canvas.setLineWidth(2)
+        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        # 사이드바 레이아웃 설정
+        scroll = QScrollArea()
+        scroll.setWidget(self.canvas)
+        scroll.setWidgetResizable(True)
+        self.setCentralWidget(scroll)
+
+        # 사이드바 설정
+        self.init_sidebar()
+
+        # 창 크기 설정
+        self.setMinimumSize(800, 600)
+
+    def init_sidebar(self):
+        # 사이드바 레이아웃 및 위젯 설정
         sidebar_layout = QVBoxLayout()
 
         self.comboBox = QComboBox(self)
@@ -57,7 +69,6 @@ class CameraApp(QWidget):
         sidebar_layout.addWidget(self.yolo_load_button)
 
         self.model_label = QLabel("AI Labeling OFF")
-        self.model_label.setFixedHeight(30)
         sidebar_layout.addWidget(self.model_label)
 
         self.save_button = QPushButton("Save Dataset", self)
@@ -83,62 +94,34 @@ class CameraApp(QWidget):
 
         sidebar_layout.addStretch()
 
-        sidebar_widget = QFrame()
+        sidebar_widget = QWidget()
         sidebar_widget.setLayout(sidebar_layout)
-        sidebar_widget.setFrameStyle(QFrame.Box | QFrame.Raised)
-        sidebar_widget.setLineWidth(2)
-        sidebar_widget.setFixedWidth(200)  # 사이드바의 너비를 고정
 
-        # 캔버스(웹캠 화면) 설정
-        self.canvas = Canvas(self.labels, self)
-        self.canvas.setFrameStyle(QFrame.Box | QFrame.Raised)
-        self.canvas.setLineWidth(2)
-        self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)  # 캔버스가 창 크기에 맞게 확장되도록 설정
-
-        # QSplitter 설정
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(sidebar_widget)
-        splitter.addWidget(self.canvas)
-
-        # 사이드바는 고정된 너비, 웹캠 화면은 확장되도록 설정
-        splitter.setStretchFactor(0, 0)  # 사이드바는 고정 크기
-        splitter.setStretchFactor(1, 1)  # 웹캠 화면은 확장
-
-        main_layout.addWidget(splitter)
-
-        # 메인 창 크기 조정 정책 설정
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.setMinimumSize(800, 600)  # 최소 창 크기 설정 (필요에 따라 조정 가능)
+        self.sidebar_dock = QDockWidget("Sidebar", self)
+        self.sidebar_dock.setWidget(sidebar_widget)
+        self.addDockWidget(Qt.RightDockWidgetArea, self.sidebar_dock)
 
     def change_preprocessing(self, text):
         self.selected_preprocessing = text
 
     def apply_preprocessing(self, frame):
-        """전처리 적용"""
         if self.selected_preprocessing == "Increase Brightness":
             return self.increase_brightness(frame, beta=50)
         elif self.selected_preprocessing == "Image Pyramids":
-            higher_reso = self.image_pyramids(frame)
-            return higher_reso  # 고해상도 이미지를 반환
+            return self.image_pyramids(frame)
         elif self.selected_preprocessing == "Color Space Conversion":
             return self.color_space_converted(frame)
         else:
             return frame
 
     def increase_brightness(self, image, beta):
-        """이미지의 밝기를 증가시키는 함수"""
-        bright_image = cv2.convertScaleAbs(image, alpha=1, beta=beta)
-        return bright_image
+        return cv2.convertScaleAbs(image, alpha=1, beta=beta)
 
     def image_pyramids(self, image):
-        """이미지의 해상도를 높이는 함수 (피라미드 업샘플링)"""
-        higher_reso = cv2.pyrUp(image)
-        return higher_reso
+        return cv2.pyrUp(image)
 
     def color_space_converted(self, image):
-        """이미지를 BGR에서 HSV 색 공간으로 변환하는 함수"""
-        hsv_image = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
-        return hsv_image
+        return cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
     def zoom_changed(self, value):
         self.canvas.scale_factor = value / 100.0
@@ -166,7 +149,7 @@ class CameraApp(QWidget):
         self.selected_camera = cv2.VideoCapture(index, cv2.CAP_DSHOW)
         if self.selected_camera.isOpened():
             self.timer.start(30)
-            self.captured = False  # 캡처 상태 초기화
+            self.captured = False
         else:
             print("Failed to open the selected camera.")
 
@@ -178,12 +161,22 @@ class CameraApp(QWidget):
                     # 선택된 전처리 적용
                     frame = self.apply_preprocessing(frame)
                     self.current_frame = frame
-                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)  # OpenCV 이미지를 RGB로 변환
+
+                    # OpenCV 이미지를 RGB로 변환
+                    frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                     image = QImage(frame_rgb, frame_rgb.shape[1], frame_rgb.shape[0], QImage.Format_RGB888)
                     pixmap = QPixmap.fromImage(image)
 
-                    # 비디오 프레임은 항상 창 크기에 맞춰 조정
-                    self.canvas.load_pixmap(pixmap)
+                    # 중앙 위젯(QScrollArea)의 크기에 맞게 이미지 스케일링
+                    scroll_area_size = self.centralWidget().size()
+                    scaled_pixmap = pixmap.scaled(scroll_area_size, Qt.KeepAspectRatio)
+
+                    # 캔버스에 스케일링된 이미지 로드
+                    self.canvas.load_pixmap(scaled_pixmap)
+
+                    # 캔버스 크기를 스케일링된 이미지 크기에 맞춤
+                    self.canvas.resize(scaled_pixmap.size())
+
         except Exception as e:
             print(f"Error in update_frame: {e}")
 
@@ -200,9 +193,15 @@ class CameraApp(QWidget):
                                QImage.Format_RGB888)
                 pixmap = QPixmap.fromImage(image)
 
-                # 캡처된 이미지는 사용자가 줌할 수 있도록 함
-                self.canvas.load_pixmap(pixmap)
-                self.canvas.scale_factor = 1.0  # 캡처 후 기본 줌 레벨을 100%로 설정
+                # 중앙 위젯(QScrollArea)의 크기에 맞게 이미지 스케일링
+                scroll_area_size = self.centralWidget().size()
+                scaled_pixmap = pixmap.scaled(scroll_area_size, Qt.KeepAspectRatio)
+
+                # 캔버스에 스케일링된 이미지 로드
+                self.canvas.load_pixmap(scaled_pixmap)
+
+                # 캔버스 크기를 스케일링된 이미지 크기에 맞춤
+                self.canvas.resize(scaled_pixmap.size())
 
                 # 객체 탐지 및 라벨링
                 if self.yolo_model:
@@ -243,7 +242,6 @@ class CameraApp(QWidget):
             if not base_name:
                 base_name = "capture"
 
-            # 중복 파일 이름 체크 및 카운트
             while True:
                 img_save_path = os.path.join(images_folder, f"{base_name}_{self.save_count}.jpg")
                 label_save_path = os.path.join(labels_folder, f"{base_name}_{self.save_count}.txt")
@@ -251,11 +249,11 @@ class CameraApp(QWidget):
                     break
                 self.save_count += 1
 
-            # 이미지 저장
             cv2.imwrite(img_save_path, self.current_frame)
 
-            # 라벨 저장
-            img_size = (self.canvas.pixmap().height(), self.canvas.pixmap().width())
+            # 수정된 부분
+            img_size = (self.canvas.pixmap.height(), self.canvas.pixmap.width())
+
             yolo_data = []
             for shape, label in self.canvas.get_shapes():
                 x_min = min(shape[0].x(), shape[1].x())
@@ -274,19 +272,18 @@ class CameraApp(QWidget):
             with open(label_save_path, 'w') as f:
                 f.write("\n".join(yolo_data))
 
-            # 데이터셋을 위한 YAML 파일 생성
             yaml_path = os.path.join(self.output_folder, "dataset.yaml")
             with open(yaml_path, 'w') as f:
                 yaml_content = f"""train: ./images
-val: ./images
+    val: ./images
 
-nc: {len(self.labels)}
-names: {self.labels}
-"""
+    nc: {len(self.labels)}
+    names: {self.labels}
+    """
                 f.write(yaml_content)
 
             self.save_count += 1
-            self.reset_to_video_feed()  # 저장 후 다시 비디오 피드로 돌아감
+            self.reset_to_video_feed()
 
         except Exception as e:
             print(f"Error in save_yolo_format: {e}")
@@ -294,9 +291,9 @@ names: {self.labels}
     def reset_to_video_feed(self):
         self.current_frame = None
         self.canvas.shapes = []
-        self.canvas.labeling_done = False  # 라벨링 상태 초기화
+        self.canvas.labeling_done = False
         self.start_camera()
-        self.captured = False  # 캡처 상태 초기화
+        self.captured = False
 
     def load_yolo_model(self):
         try:
@@ -310,10 +307,14 @@ names: {self.labels}
     def eventFilter(self, source, event):
         if event.type() == QEvent.KeyPress:
             if event.key() == Qt.Key_Return:
+                # QMessageBox가 활성화된 경우 이벤트를 무시함
+                if any(isinstance(widget, QMessageBox) for widget in QApplication.topLevelWidgets()):
+                    return False  # 이벤트 무시
+
                 if not self.captured:
                     self.capture_still()
                 else:
-                    if not self.canvas.labeling_done:  # 라벨링이 완료되지 않았으면 저장 없이 복귀
+                    if not self.canvas.labeling_done:
                         self.reset_to_video_feed()
                     else:
                         self.save_yolo_format()
