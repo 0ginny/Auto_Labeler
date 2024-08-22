@@ -8,13 +8,15 @@ from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidge
 from ultralytics import YOLO
 
 from canvas import Canvas
+from preprocessing import Image_Preprocess
 
 class AutoLabeler(QMainWindow):
     def __init__(self):
         super().__init__()
         self.labels = self.load_labels("classes.txt")
         self.yolo_model = None
-        self.selected_preprocessing = "Normal"
+        # Image_Preprocessing
+        self.image_process = Image_Preprocess()
         self.initUI()
         self.selected_camera = None
         self.timer = QTimer(self)
@@ -24,6 +26,8 @@ class AutoLabeler(QMainWindow):
         self.save_count = 0
         self.captured = False
 
+
+
         QApplication.instance().installEventFilter(self)
 
     def load_labels(self, filename):
@@ -31,7 +35,8 @@ class AutoLabeler(QMainWindow):
             return [line.strip() for line in f.readlines()]
 
     def initUI(self):
-        self.setWindowTitle("Camera Selector")
+
+        self.setWindowTitle("Auto Labeler")
 
         # 중앙 위젯 설정 (캔버스)
         self.canvas = Canvas(self.labels, self)
@@ -84,8 +89,8 @@ class AutoLabeler(QMainWindow):
         sidebar_layout.addWidget(self.save_name_input)
 
         self.preprocessing_combo = QComboBox(self)
-        self.preprocessing_combo.addItems(["Normal", "Increase Brightness", "Image Pyramids", "Color Space Conversion"])
-        self.preprocessing_combo.currentTextChanged.connect(self.change_preprocessing)
+        self.preprocessing_combo.addItems(self.image_process.preprocessing_types)
+        self.preprocessing_combo.currentTextChanged.connect(self.image_process.change_preprocessing)
         sidebar_layout.addWidget(QLabel("Select Preprocessing:"))
         sidebar_layout.addWidget(self.preprocessing_combo)
 
@@ -98,27 +103,7 @@ class AutoLabeler(QMainWindow):
         self.sidebar_dock.setWidget(sidebar_widget)
         self.addDockWidget(Qt.RightDockWidgetArea, self.sidebar_dock)
 
-    def change_preprocessing(self, text):
-        self.selected_preprocessing = text
 
-    def apply_preprocessing(self, frame):
-        if self.selected_preprocessing == "Increase Brightness":
-            return self.increase_brightness(frame, beta=50)
-        elif self.selected_preprocessing == "Image Pyramids":
-            return self.image_pyramids(frame)
-        elif self.selected_preprocessing == "Color Space Conversion":
-            return self.color_space_converted(frame)
-        else:
-            return frame
-
-    def increase_brightness(self, image, beta):
-        return cv2.convertScaleAbs(image, alpha=1, beta=beta)
-
-    def image_pyramids(self, image):
-        return cv2.pyrUp(image)
-
-    def color_space_converted(self, image):
-        return cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
     def reset_zoom(self):
         # 화면 크기에 맞게 이미지를 다시 스케일링
@@ -161,7 +146,7 @@ class AutoLabeler(QMainWindow):
                 ret, frame = self.selected_camera.read()
                 if ret:
                     # 선택된 전처리 적용
-                    frame = self.apply_preprocessing(frame)
+                    frame = self.image_process.apply_preprocessing(frame)
                     self.current_frame = frame
 
                     # OpenCV 이미지를 RGB로 변환
@@ -232,6 +217,8 @@ class AutoLabeler(QMainWindow):
             if not self.output_folder:
                 self.output_folder = QFileDialog.getExistingDirectory(self, "Select Save Directory")
                 if not self.output_folder:
+                    # 폴더 선택이 취소된 경우 상태를 초기화하고 비디오 화면으로 전환
+                    self.reset_to_video_feed()
                     return
 
             images_folder = os.path.join(self.output_folder, "images")
