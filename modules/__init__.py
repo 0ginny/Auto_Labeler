@@ -5,12 +5,12 @@ from PyQt5.QtCore import Qt, QTimer, QPointF, QEvent
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QListWidget, QLineEdit, QSplitter, QFrame, QSizePolicy, QScrollArea, QDockWidget, QMainWindow, QHBoxLayout, QMessageBox
 
+from ultralytics import YOLO
+
 from canvas import Canvas
 from zoom import ZoomWidget
 
-from ultralytics import YOLO
-
-class CameraApp(QMainWindow):
+class AutoLabeler(QMainWindow):
     def __init__(self):
         super().__init__()
         self.labels = self.load_labels("classes.txt")
@@ -331,6 +331,6 @@ class CameraApp(QMainWindow):
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    ex = CameraApp()
+    ex = AutoLabeler()
     ex.show()
     sys.exit(app.exec_())

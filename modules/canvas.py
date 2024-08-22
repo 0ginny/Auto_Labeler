@@ -24,6 +24,10 @@ class Canvas(QFrame):
         self.vertex_radius = 5
         self.labeling_done = False  # 라벨링 완료 여부 변수 추가
 
+        # 패닝 관련 변수 추가
+        self.panning = False
+        self.last_mouse_position = None
+
     def load_pixmap(self, pixmap):
         self.pixmap = pixmap
         self.shapes = []
@@ -131,6 +135,11 @@ class Canvas(QFrame):
                         self.drawing = True
 
                 self.update()
+
+            elif event.button() == Qt.MiddleButton:
+                # 마우스 휠 클릭 시 패닝 모드로 전환
+                self.panning = True
+                self.last_mouse_position = event.pos()
         except Exception as e:
             print(f"Error in mousePressEvent: {e}")
 
@@ -158,6 +167,12 @@ class Canvas(QFrame):
                 bottom_right = top_left + (self.dragging_shape[1] - self.dragging_shape[0])
                 self.dragging_shape[0] = top_left
                 self.dragging_shape[1] = bottom_right
+                self.update()
+            elif self.panning and self.last_mouse_position is not None:
+                # 패닝 중일 때 화면을 이동
+                delta = event.pos() - self.last_mouse_position
+                self.image_offset += delta
+                self.last_mouse_position = event.pos()
                 self.update()
             else:
                 self.hovered_vertex = None
@@ -212,6 +227,11 @@ class Canvas(QFrame):
                     self.dragging_shape = None
 
                 self.update()
+
+            elif event.button() == Qt.MiddleButton:
+                # 마우스 휠 클릭 해제 시 패닝 모드 종료
+                self.panning = False
+                self.last_mouse_position = None
         except Exception as e:
             print(f"Error in mouseReleaseEvent: {e}")
 
