@@ -3,7 +3,7 @@ import os
 import cv2
 from PyQt5.QtCore import Qt, QTimer, QPointF, QEvent
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QListWidget, QLineEdit, QSplitter, QFrame, QSizePolicy, QScrollArea, QDockWidget, QMainWindow, QToolButton, QCheckBox, QHBoxLayout
+from PyQt5.QtWidgets import QApplication, QComboBox, QLabel, QVBoxLayout, QWidget, QPushButton, QFileDialog, QListWidget, QLineEdit, QSplitter, QFrame, QSizePolicy, QScrollArea, QDockWidget, QMainWindow, QHBoxLayout, QMessageBox
 
 from canvas import Canvas
 from zoom import ZoomWidget
@@ -251,7 +251,9 @@ class CameraApp(QMainWindow):
 
             cv2.imwrite(img_save_path, self.current_frame)
 
-            img_size = (self.canvas.pixmap().height(), self.canvas.pixmap().width())
+            # 수정된 부분
+            img_size = (self.canvas.pixmap.height(), self.canvas.pixmap.width())
+
             yolo_data = []
             for shape, label in self.canvas.get_shapes():
                 x_min = min(shape[0].x(), shape[1].x())
@@ -273,11 +275,11 @@ class CameraApp(QMainWindow):
             yaml_path = os.path.join(self.output_folder, "dataset.yaml")
             with open(yaml_path, 'w') as f:
                 yaml_content = f"""train: ./images
-val: ./images
+    val: ./images
 
-nc: {len(self.labels)}
-names: {self.labels}
-"""
+    nc: {len(self.labels)}
+    names: {self.labels}
+    """
                 f.write(yaml_content)
 
             self.save_count += 1
@@ -305,6 +307,10 @@ names: {self.labels}
     def eventFilter(self, source, event):
         if event.type() == QEvent.KeyPress:
             if event.key() == Qt.Key_Return:
+                # QMessageBox가 활성화된 경우 이벤트를 무시함
+                if any(isinstance(widget, QMessageBox) for widget in QApplication.topLevelWidgets()):
+                    return False  # 이벤트 무시
+
                 if not self.captured:
                     self.capture_still()
                 else:
