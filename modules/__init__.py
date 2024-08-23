@@ -263,11 +263,12 @@ class AutoLabeler(QMainWindow):
 
             yaml_path = os.path.join(self.output_folder, "dataset.yaml")
             with open(yaml_path, 'w') as f:
-                yaml_content = f"""train: ./images
-    val: ./images
+                yaml_content = f"""
+train: ./images
+val: ./images
 
-    nc: {len(self.labels)}
-    names: {self.labels}
+nc: {len(self.labels)}
+names: {self.labels}
     """
                 f.write(yaml_content)
 
